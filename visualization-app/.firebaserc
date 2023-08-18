@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "vidock-share"
+  },
+  "targets": {
+    "vidock-share": {
+      "hosting": {
+        "vidock-qa": [
+          "vidock-share"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

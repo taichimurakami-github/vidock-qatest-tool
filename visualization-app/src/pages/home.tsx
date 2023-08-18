@@ -12,7 +12,9 @@ import Header from "../containers/Header";
 // import data from "@/data/IEEEVR2022Ogawa_scrolltl_qaresult.json";
 
 const qaResultPlotsDispTargets = [
+  "contents_similarity_bigram",
   "mse",
+  "cw_ssim",
   "ssim",
   "psnr",
   "hist_bin",
@@ -77,7 +79,7 @@ export default function Home() {
           </header> */}
           <div class="px-2 py-16 bg-slate-300">
             <h2 class="text-center text-xl font-bold">Results Summary</h2>
-            <div class={`grid gap-2 grid-cols-3`}>
+            <div class={`grid gap-2 grid-cols-4`}>
               <Show when={plots()}>
                 <For each={qaResultPlotsDispTargets}>
                   {(qakey) => <img class="w-full" src={plots()[qakey]} />}
@@ -119,12 +121,14 @@ export default function Home() {
                 <p class="text-center text-2xl">time : {item.frame_time}</p>
                 <div class="h-4"></div>
                 {qaResultPlotsDispTargets.map((key) => (
-                  <p class="text-2xl flex gap-4 justify-center">
-                    {key} : {item.qa_result[key]}
+                  <li class="text-2xl w-full flex gap-4 justify-center">
+                    <p class="w-1/2 text-right">{key}</p>
+                    <p>:</p>
+                    <p class="w-1/2">{item.qa_result[key]}</p>
                     {/* {item.qa_result[key]map((v) => (
                     <span>{v}</span>
                   ))} */}
-                  </p>
+                  </li>
                 ))}
                 <div class="h-4"></div>
                 <p class="text-2xl flex gap-4 justify-center">
