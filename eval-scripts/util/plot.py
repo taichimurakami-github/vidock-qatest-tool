@@ -13,6 +13,7 @@ def plot_scatter(
 ):
     plt.title(title)
     plt.xlabel("time")
+    plt.ylim(bottom=0)
     plt.scatter(x, y)
 
     if save_path != None:

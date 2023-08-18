@@ -10,11 +10,14 @@ from skimage.metrics import (
     mean_squared_error as compute_mse,
     peak_signal_noise_ratio as compute_psnr,
 )
+import ssim.ssimlib as pyssim
 import util.paths as paths
 import util.video as vutil
 from util.asset import AssetId, get_asset_id
 import util.cvimg as cvimutil
 import util.plot as pltutil
+import util.text as txtutil
+from util.ocr import OcrTextExtractor, cvt_lbbox_list_to_joined_str
 
 
 # 関数の実行時間を計測するデコレータ
@@ -39,7 +42,7 @@ def get_video_frames(path: str):
 
 
 @measure_time
-def main(asset_id: str, resize_dsize=None):
+def main(asset_id: str, tesseract_path: str, resize_width_px=None):
     print(asset_id)
     cap = vutil.get_cv_video_cap(paths.path_file_video(asset_id))
 
@@ -49,6 +52,12 @@ def main(asset_id: str, resize_dsize=None):
 
     document_cv_img = cv2.imread(paths.path_file_document_concat_img(asset_id))
     print(f"document img shape: {document_cv_img.shape}")
+
+    en_lbbox_tesseract = (
+        OcrTextExtractor(tesseract_path)
+        .use_english_lang()
+        .use_linebox_builder()
+    )
 
     result = []
 
@@ -63,7 +72,12 @@ def main(asset_id: str, resize_dsize=None):
 
         im_frame = vutil.get_frame_as_cv_img(cap, t * 1000)
 
-        if resize_dsize != None:
+        if resize_width_px != None:
+            resize_dsize = (
+                resize_width_px,
+                int(resize_width_px * im_frame.shape[0] / im_frame.shape[1]),
+            )
+            print("Resize to : ", resize_dsize)
             im_frame = cv2.resize(im_frame, resize_dsize)
 
         frame_dsize = im_frame.shape[1], im_frame.shape[0]
@@ -72,48 +86,70 @@ def main(asset_id: str, resize_dsize=None):
             document_cv_img, match_result_viewport[0], match_result_viewport[1]
         )
 
-        img_ref = cv2.resize(im_matched, frame_dsize)
-        img_ref_bin = cvimutil.bgr_to_bin(img_ref)
-
-        img_base = im_frame
-        img_base_bin = cvimutil.bgr_to_bin(img_base)
-
-        im_diff_bin = cv2.absdiff(img_ref_bin, img_base_bin)
-
-        hist_comparison_bgr = cvimutil.compare_hists(img_ref, img_base)
-        hist_comparison_bin = cvimutil.compare_hists(img_ref_bin, img_base_bin)
-
-        h_pp_corr, v_pp_corr = cvimutil.calc_vh_projection_profile_corr(
-            img_ref, img_base
+        img_from_doc = cv2.resize(im_matched, frame_dsize)
+        img_from_doc_bin = cvimutil.bgr_to_bin(img_from_doc)
+        img_from_doc_bin_pil = cvimutil.cvt_to_pilimg(img_from_doc_bin)
+        img_from_doc_contents_joined = cvt_lbbox_list_to_joined_str(
+            en_lbbox_tesseract.extract(img_from_doc_bin_pil)
         )
 
-        PSNR_quality = compute_psnr(img_ref_bin, img_base_bin)
-        SSIM_quality = compute_ssim(img_ref_bin, img_base_bin)
-        MSE_quality = compute_mse(img_ref_bin, img_base_bin)
-        # PSNR_quality, _ = compute_psnr(img_ref_bin, img_base_bin)
-        # SSIM_quality, _ = compute_ssim(img_ref_bin, img_base_bin)
-        # MSE_quality, _ = compute_mse(img_ref_bin, img_base_bin)
+        img_from_video = im_frame
+        img_from_video_bin = cvimutil.bgr_to_bin(img_from_video)
+        img_from_video_bin_pil = cvimutil.cvt_to_pilimg(img_from_video_bin)
+        img_from_video_contents_joined = cvt_lbbox_list_to_joined_str(
+            en_lbbox_tesseract.extract(img_from_video_bin_pil)
+        )
+
+        img_diff_bin = cv2.absdiff(img_from_doc_bin, img_from_video_bin)
+
+        hist_comparison_bgr = cvimutil.compare_hists(
+            img_from_doc, img_from_video
+        )
+        hist_comparison_bin = cvimutil.compare_hists(
+            img_from_doc_bin, img_from_video_bin
+        )
+
+        h_pp_corr, v_pp_corr = cvimutil.calc_vh_projection_profile_corr(
+            img_from_doc, img_from_video
+        )
+
+        MSE_quality = compute_mse(img_from_doc_bin, img_from_video_bin)
+        PSNR_quality = compute_psnr(img_from_doc_bin, img_from_video_bin)
+        SSIM_quality = compute_ssim(img_from_doc_bin, img_from_video_bin)
+        CW_SSIM_quality = pyssim.SSIM(img_from_doc_bin_pil).cw_ssim_value(
+            img_from_video_bin_pil
+        )
+
+        content_similarity_bigram = txtutil.get_ngram_score(
+            img_from_video_contents_joined, img_from_doc_contents_joined
+        )
+
+        # PSNR_quality, _ = compute_psnr(img_from_doc_bin, img_from_video_bin)
+        # SSIM_quality, _ = compute_ssim(img_from_doc_bin, img_from_video_bin)
+        # MSE_quality, _ = compute_mse(img_from_doc_bin, img_from_video_bin)
         # GMSD_quality, _ = cv2.quality.QualityGMSD().compute(
-        #     img_ref_bin, img_base_
+        #     img_from_doc_bin, img_from_video_
         # )
 
         result.append(
             {
                 "frame_time": t,
                 "im_frame": [
-                    img_ref.shape,
-                    cvimutil.cvt_to_dataurl(img_ref_bin),
+                    im_matched.shape,
+                    cvimutil.cvt_to_dataurl(img_from_video_bin),
                 ],
                 "im_matched": [
-                    im_matched.shape,
-                    cvimutil.cvt_to_dataurl(img_base_bin),
+                    img_from_doc.shape,
+                    cvimutil.cvt_to_dataurl(img_from_doc_bin),
                 ],
                 "im_diff": [
-                    im_diff_bin.shape,
-                    cvimutil.cvt_to_dataurl(im_diff_bin),
+                    img_diff_bin.shape,
+                    cvimutil.cvt_to_dataurl(img_diff_bin),
                 ],
                 "qa_result": {
+                    "contents_similarity_bigram": content_similarity_bigram,
                     "ssim": SSIM_quality,
+                    "cw_ssim": CW_SSIM_quality,
                     "psnr": PSNR_quality,
                     "mse": MSE_quality,
                     # "gmsd": GMSD_quality,
@@ -126,6 +162,7 @@ def main(asset_id: str, resize_dsize=None):
         )
 
     result_output_dir = paths.path_dir_output_front
+    # result_output_dir = paths.path_dir_output_back
 
     os.makedirs(result_output_dir, exist_ok=True)
 
@@ -150,4 +187,4 @@ if __name__ == "__main__":
     for target in targets:
         asset_id_str = get_asset_id(target)
         print(f"\nAttempt: {asset_id_str}")
-        main(asset_id_str, (480, 240))
+        main(asset_id_str, paths.path_file_tessearct_bin, 960)

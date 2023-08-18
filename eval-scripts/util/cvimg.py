@@ -1,6 +1,7 @@
 import cv2
 import base64
 import numpy as np
+from PIL.Image import fromarray as pilim_fromarray
 
 
 def __clamp(min_value, value, max_value):
@@ -22,6 +23,21 @@ def cvt_to_dataurl(cv_img, ext="png"):
     retval, buffer = cv2.imencode(f".png", cv_img)
     data = base64.b64encode(buffer).decode("utf-8")
     return f"data:image/{ext};base64,{data}"
+
+
+def cvt_to_pilimg(cv_img):
+    new_image = cv_img.copy()
+
+    if new_image.ndim == 2:  # モノクロ
+        pass
+
+    elif new_image.shape[2] == 3:  # カラー
+        new_image = cv2.cvtColor(new_image, cv2.COLOR_BGR2RGB)
+
+    elif new_image.shape[2] == 4:  # 透過
+        new_image = cv2.cvtColor(new_image, cv2.COLOR_BGRA2RGBA)
+
+    return pilim_fromarray(new_image)
 
 
 def bgr_to_bin(cv_img, threshold=150, maxval=255):
